@@ -1,0 +1,11 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Database
+urls.db
+
+# Virtual environments (if you use them later)
+venv/
+env/
+.env
