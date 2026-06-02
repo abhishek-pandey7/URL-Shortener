@@ -1,6 +1,6 @@
 # URL Shortener
 
-A lightweight URL shortening service built with Python (Flask), SQLite, and Redis. The project is a hands-on implementation of several core distributed-systems design patterns — counter-based ID generation, Base62 encoding, and a Cache-Aside caching strategy.
+A lightweight URL shortening service built with Python (Flask), SQLite, and Redis. The project is a hands-on implementation of several core distributed-systems design patterns - counter-based ID generation, Base62 encoding, and a Cache-Aside caching strategy.
 
 ---
 
@@ -59,7 +59,7 @@ The service has two layers of storage with clearly separated responsibilities:
 
 | Layer | Technology | Role |
 |---|---|---|
-| Primary DB | SQLite (`urls.db`) | Source of truth — persists all URL mappings |
+| Primary DB | SQLite (`urls.db`) | Source of truth - persists all URL mappings |
 | Cache | Redis | Serves hot (frequently accessed) URLs at low latency |
 
 ---
@@ -72,14 +72,14 @@ The service has two layers of storage with clearly separated responsibilities:
 
 **Why Base62?**
 
-Base62 uses `[a-z A-Z 0-9]` — 62 characters — all of which are URL-safe with no encoding overhead. This is a deliberate choice over alternatives:
+Base62 uses `[a-z A-Z 0-9]` - 62 characters - all of which are URL-safe with no encoding overhead. This is a deliberate choice over alternatives:
 
 | Scheme | Characters | URL-safe? | Notes |
 |---|---|---|---|
 | Base64 | 64 | ✗ | `+` and `/` need URL-encoding |
 | Base62 | 62 | ✓ | Clean, compact, no special chars |
 | MD5/SHA hash | hex | ✓ | Collision risk; not sequential |
-| UUID | alphanumeric | ✓ | 36 chars — too long |
+| UUID | alphanumeric | ✓ | 36 chars - too long |
 
 **Capacity:** A 6-character Base62 string can represent 62⁶ ≈ **56 billion** unique URLs, which is comparable to production systems like bit.ly.
 
@@ -93,7 +93,7 @@ def encode(num: int) -> str: ...
 def decode(short_url: str) -> int: ...
 ```
 
-The encode/decode pair is the only bridge between the URL-facing identifier and the database row — no separate mapping table is needed.
+The encode/decode pair is the only bridge between the URL-facing identifier and the database row - no separate mapping table is needed.
 
 ---
 
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS urls (
 ```
 
 Key decisions:
-- `AUTOINCREMENT` on `id` drives the ID generation strategy described above. The integer ID is the only thing that needs to be stored — the short code is derived from it on the fly.
+- `AUTOINCREMENT` on `id` drives the ID generation strategy described above. The integer ID is the only thing that needs to be stored - the short code is derived from it on the fly.
 - `clicks` and `created_at` are included for future analytics, though click tracking is currently handled in Redis (see below).
 - Each request opens and closes its own connection (`with sqlite3.connect(...)`), keeping the code simple at the cost of connection-pool efficiency.
 
@@ -212,8 +212,8 @@ Redirects to the original URL.
 **Response:** `302 Found` with `Location` header set to the original URL.
 
 **Errors:**
-- `400` — short_id contains characters outside the Base62 alphabet
-- `404` — short_id not found in the database
+- `400` - short_id contains characters outside the Base62 alphabet
+- `404` - short_id not found in the database
 
 ---
 
@@ -240,5 +240,5 @@ url-shortener/
 | **Cache** | Redis on localhost | Redis Cluster or a managed cache (ElastiCache) for HA |
 | **Click tracking** | Redis counter only; not persisted to SQLite | Periodic flush from Redis → DB for durable analytics |
 | **URL validation** | None beyond null check | Add URL format validation and optional reachability check |
-| **Collisions** | N/A — counter is monotonic, no collision possible | Only relevant if switching to hash-based ID generation |
+| **Collisions** | N/A - counter is monotonic, no collision possible | Only relevant if switching to hash-based ID generation |
 | **Security** | No rate limiting or auth | Add rate limiting on `/shorten` to prevent abuse |
