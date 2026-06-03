@@ -1,6 +1,6 @@
 # URL Shortener
 
-A lightweight URL shortening service built with Python (Flask), SQLite, and Redis. The project is a hands-on implementation of several core distributed-systems design patterns - counter-based ID generation, Base62 encoding, and a Cache-Aside caching strategy.
+A lightweight URL shortening service built with Python (Flask), PostgreSQL, and Redis. The project is a hands-on implementation of several core distributed-systems design patterns - counter-based ID generation, Base62 encoding, and a Cache-Aside caching strategy.
 
 ---
 
@@ -10,7 +10,7 @@ A lightweight URL shortening service built with Python (Flask), SQLite, and Redi
 - [System Design](#system-design)
   - [Architecture Overview](#architecture-overview)
   - [ID Generation: Counter + Base62 Encoding](#id-generation-counter--base62-encoding)
-  - [Storage Layer: SQLite](#storage-layer-sqlite)
+  - [Storage Layer: PostgreSQL](#storage-layer-sqlite)
   - [Caching Layer: Redis (Cache-Aside)](#caching-layer-redis-cache-aside)
   - [Request Flows](#request-flows)
 - [API Reference](#api-reference)
@@ -49,7 +49,7 @@ python client.py
 │            │      GET /<short_id>              │
 │            │ ───────────────────────►          │
 │            │ ◄─── 302 Redirect ─────  ┌────────▼────────┐      ┌─────────────────┐
-└────────────┘                          │  Redis Cache    │      │  SQLite DB      │
+└────────────┘                          │  Redis Cache    │      │  PostgreSQL DB      │
                                         │  (hot URLs)     │      │  (source of     │
                                         │  TTL: 24hrs     │      │   truth)        │
                                         └─────────────────┘      └─────────────────┘
@@ -59,7 +59,7 @@ The service has two layers of storage with clearly separated responsibilities:
 
 | Layer | Technology | Role |
 |---|---|---|
-| Primary DB | SQLite (`urls.db`) | Source of truth - persists all URL mappings |
+| Primary DB | PostgreSQL (`PostgreSQL Server`) | Source of truth - persists all URL mappings |
 | Cache | Redis | Serves hot (frequently accessed) URLs at low latency |
 
 ---
@@ -68,7 +68,7 @@ The service has two layers of storage with clearly separated responsibilities:
 
 **The Problem:** Short URLs need a short, unique, URL-safe identifier for every long URL stored.
 
-**The Approach:** SQLite's `AUTOINCREMENT` on the `id` column acts as a global monotonic counter. Each new URL gets an integer ID (1, 2, 3, ...). That integer is then encoded into Base62.
+**The Approach:** PostgreSQL's `SERIAL` on the `id` column acts as a global monotonic counter. Each new URL gets an integer ID (1, 2, 3, ...). That integer is then encoded into Base62.
 
 **Why Base62?**
 
@@ -97,13 +97,13 @@ The encode/decode pair is the only bridge between the URL-facing identifier and 
 
 ---
 
-### Storage Layer: SQLite
+### Storage Layer: PostgreSQL
 
 The `urls` table is the single source of truth:
 
 ```sql
 CREATE TABLE IF NOT EXISTS urls (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    id          INTEGER PRIMARY KEY SERIAL,
     long_url    TEXT NOT NULL,
     clicks      INTEGER DEFAULT 0,
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -111,9 +111,9 @@ CREATE TABLE IF NOT EXISTS urls (
 ```
 
 Key decisions:
-- `AUTOINCREMENT` on `id` drives the ID generation strategy described above. The integer ID is the only thing that needs to be stored - the short code is derived from it on the fly.
+- `SERIAL` on `id` drives the ID generation strategy described above. The integer ID is the only thing that needs to be stored - the short code is derived from it on the fly.
 - `clicks` and `created_at` are included for future analytics, though click tracking is currently handled in Redis (see below).
-- Each request opens and closes its own connection (`with sqlite3.connect(...)`), keeping the code simple at the cost of connection-pool efficiency.
+- Each request opens and closes its own connection (`with psycopg2.connect(...)`), keeping the code simple at the cost of connection-pool efficiency.
 
 ---
 
@@ -127,7 +127,7 @@ With write-through caching, every new URL created would also be written into Red
 
 ```
 Write path (POST /shorten):
-  1. Insert into SQLite → get integer ID
+  1. Insert into PostgreSQL → get integer ID
   2. Encode to Base62 → short_id
   3. Return short_url
   ✗  Do NOT write to Redis yet
@@ -135,7 +135,7 @@ Write path (POST /shorten):
 Read path (GET /<short_id>):
   1. Check Redis for short_id
      ├─ HIT  → redirect immediately (fast path)
-     └─ MISS → decode short_id → query SQLite → populate Redis → redirect
+     └─ MISS → decode short_id → query PostgreSQL → populate Redis → redirect
 ```
 
 **TTL (Time-To-Live):** Every key written to Redis has a 24-hour expiry (`ex=86400`). This provides automatic cache invalidation without needing explicit eviction logic. Frequently accessed URLs will be re-cached on the next cache miss; cold URLs expire naturally.
@@ -145,7 +145,7 @@ Read path (GET /<short_id>):
 redis_client.incr(f"clicks:{short_id}")  # incremented on every redirect, cache hit or miss
 ```
 
-This offloads high-frequency write operations from SQLite to Redis, avoiding row-level locking on the `clicks` column for every redirect.
+This offloads high-frequency write operations from PostgreSQL to Redis, avoiding row-level locking on the `clicks` column for every redirect.
 
 ---
 
@@ -155,7 +155,7 @@ This offloads high-frequency write operations from SQLite to Redis, avoiding row
 
 ```
 Client → POST /shorten { "long_url": "https://..." }
-       → Insert into SQLite
+       → Insert into PostgreSQL
        → Get autoincrement ID (e.g., 42)
        → Base62 encode: 42 → "G"
        → Return { "short_url": "http://localhost:5000/G" }
@@ -174,7 +174,7 @@ Client → GET /G
   [Cache Miss]
   → Redis GET "G" → nil
   → Base62 decode: "G" → 42
-  → SQLite SELECT WHERE id = 42 → "https://..."
+  → PostgreSQL SELECT WHERE id = 42 → "https://..."
   → Redis SET "G" "https://..." EX 86400
   → Redis INCR "clicks:G"
   → 302 Redirect
@@ -223,10 +223,9 @@ Redirects to the original URL.
 url-shortener/
 ├── app.py          # Flask routes: /shorten and /<short_id>
 ├── base62.py       # Stateless encode/decode functions
-├── database.py     # SQLite wrapper (URLDatabase class)
+├── database.py     # PostgreSQL wrapper (URLDatabase class)
 ├── client.py       # Interactive CLI for testing the API
-├── requirements.txt
-└── urls.db         # SQLite database file (auto-created on first run)
+└── requirements.txt
 ```
 
 ---
@@ -235,10 +234,10 @@ url-shortener/
 
 | Area | Current Design | Production Consideration |
 |---|---|---|
-| **Database** | SQLite (single-file, single-writer) | Replace with PostgreSQL/MySQL for concurrent writes |
-| **ID generation** | DB `AUTOINCREMENT` (single node) | Distributed systems need a dedicated ID service (e.g., Twitter Snowflake) to avoid counter contention |
+| **Database** | PostgreSQL | Already migrated from SQLite to support high concurrency |
+| **ID generation** | DB `SERIAL` (single node) | Distributed systems need a dedicated ID service (e.g., Twitter Snowflake) to avoid counter contention |
 | **Cache** | Redis on localhost | Redis Cluster or a managed cache (ElastiCache) for HA |
-| **Click tracking** | Redis counter only; not persisted to SQLite | Periodic flush from Redis → DB for durable analytics |
+| **Click tracking** | Redis counter only; not persisted to PostgreSQL | Periodic flush from Redis → DB for durable analytics |
 | **URL validation** | None beyond null check | Add URL format validation and optional reachability check |
 | **Collisions** | N/A - counter is monotonic, no collision possible | Only relevant if switching to hash-based ID generation |
 | **Security** | No rate limiting or auth | Add rate limiting on `/shorten` to prevent abuse |
