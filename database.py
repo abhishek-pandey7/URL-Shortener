@@ -1,8 +1,14 @@
 import psycopg2
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class URLDatabase:
-    def __init__(self,db_url='postgresql://postgres:password@localhost:5432/url-shortener'):
+    def __init__(self,db_url=os.getenv('DATABASE_URL')):
         self.db_url=db_url
+        if not self.db_url:
+            raise ValueError("DATABASE_URL environment variable is missing!")
         self._init_db()
     
     def _get_connection(self):
