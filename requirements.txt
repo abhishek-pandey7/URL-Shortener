@@ -1,4 +1,6 @@
 flask
 redis
-requestspython-dotenv
+requests
+python-dotenv
 psycopg2-binary
+Flask-limiter
