@@ -17,7 +17,8 @@ redis_client=redis.Redis(
     host='localhost',
     port=6379,
     db=0,
-    decode_responses=True
+    decode_responses=True,
+    protocol=2
     #decode_responses=True ensures redis gives us normal python strings instead of
     #raw b-strings (b'http...').
 )
@@ -26,7 +27,7 @@ redis_client=redis.Redis(
 limiter=Limiter(
     get_remote_address,
     app=app,
-    storage_uri='redis://localhost:6379/1',#using db 1 for rate limiting data,leaving db 0 for our url cache
+    storage_uri='redis://localhost:6379/1?protocol=2',#using db 1 for rate limiting data,leaving db 0 for our url cache
     strategy='fixed-window'
 )
 

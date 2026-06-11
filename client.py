@@ -16,6 +16,12 @@ while True:
             "http://127.0.0.1:5000/shorten",
             json={'long_url':long_url}
         )
+
+        #check if we got rate limited before trying to parse JSON
+        if response.status_code==429:
+            print("Rate limit exceeded. Please try again later.")
+            continue
+
         #parse JSON response
         data = response.json()
         if response.status_code == 201:

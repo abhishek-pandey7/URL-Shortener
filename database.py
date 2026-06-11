@@ -18,14 +18,16 @@ class URLDatabase:
     def _init_db(self):
         #creating table where id is primary key
         with self._get_connection() as conn:
-            conn.execute("""
-            CREATE TABLE IF NOT EXISTS urls(
-                id SERIAL PRIMARY KEY,
-                long_url TEXT NOT NULL,
-                clicks INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS urls(
+                        id SERIAL PRIMARY KEY,
+                        long_url TEXT NOT NULL,
+                        clicks INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                conn.commit()
     
 
     def insert(self, long_url:str):
